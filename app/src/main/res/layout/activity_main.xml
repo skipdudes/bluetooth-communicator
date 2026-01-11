@@ -8,9 +8,10 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Select device:"
-        android:textSize="18sp"
-        android:layout_marginBottom="8dp"/>
+        android:text="Status: Disconnected"
+        android:id="@+id/status_text"
+        android:textStyle="bold"
+        android:layout_marginBottom="5dp"/>
 
     <Spinner
         android:id="@+id/device_spinner"
@@ -18,18 +19,63 @@
         android:layout_height="wrap_content"
         android:minHeight="48dp" />
 
-    <Button
-        android:id="@+id/button_server"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Run as SERVER (Wait)"
-        android:layout_marginTop="16dp"/>
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/button_server"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Server" />
+        <Button
+            android:id="@+id/button_client"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="Client" />
+    </LinearLayout>
 
-    <Button
-        android:id="@+id/button_client"
+    <CheckBox
+        android:id="@+id/checkbox_sound"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Sound and vibration upon message"
+        android:checked="true"/>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#CCCCCC"
+        android:layout_marginVertical="8dp"/>
+
+    <ListView
+        android:id="@+id/chat_list_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:transcriptMode="alwaysScroll"
+        android:stackFromBottom="true"/>
+
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Connect as CLIENT"
-        android:layout_marginTop="8dp"/>
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <EditText
+            android:id="@+id/message_input"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:hint="Type message..." />
+
+        <Button
+            android:id="@+id/button_send"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Send" />
+    </LinearLayout>
 
 </LinearLayout>

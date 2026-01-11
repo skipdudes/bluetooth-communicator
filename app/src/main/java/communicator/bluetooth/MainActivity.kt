@@ -7,28 +7,38 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.Spinner
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresPermission
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var targetDevice: BluetoothDevice? = null
-    private var activeSocket: BluetoothSocket? = null
+
+    private var connectedThread: ConnectedThread? = null
+    private lateinit var chatAdapter: ArrayAdapter<String>
+    private val chatMessages = ArrayList<String>()
+
+    private lateinit var statusText: TextView
+    private lateinit var messageInput: EditText
+    private lateinit var checkBoxSound: CheckBox
 
     companion object {
         val MY_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
@@ -62,20 +72,29 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        statusText = findViewById(R.id.status_text)
+        messageInput = findViewById(R.id.message_input)
+        checkBoxSound = findViewById(R.id.checkbox_sound)
+        val chatListView: ListView = findViewById(R.id.chat_list_view)
+
+        chatAdapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, chatMessages)
+        chatListView.adapter = chatAdapter
+
         val bluetoothManager = getSystemService(BluetoothManager::class.java)
         bluetoothAdapter = bluetoothManager?.adapter
 
         findViewById<Button>(R.id.button_server).setOnClickListener { startServer() }
-        findViewById<Button>(R.id.button_client).setOnClickListener {
-            if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                return@setOnClickListener
-            }
+        findViewById<Button>(R.id.button_client).setOnClickListener { startClient() }
 
-            startClient()
+        findViewById<Button>(R.id.button_send).setOnClickListener {
+            val msg = messageInput.text.toString()
+            if (msg.isNotEmpty() && connectedThread != null) {
+                connectedThread?.write(msg.toByteArray())
+                addMessageToChat("Me: $msg")
+                messageInput.text.clear()
+            } else {
+                Toast.makeText(this, "Not connected or empty message", Toast.LENGTH_SHORT).show()
+            }
         }
 
         if (bluetoothAdapter == null) {
@@ -84,6 +103,43 @@ class MainActivity : AppCompatActivity() {
         }
 
         checkPermissionsAndEnableBluetooth()
+    }
+
+    private fun addMessageToChat(message: String) {
+        runOnUiThread {
+            chatMessages.add(message)
+            chatAdapter.notifyDataSetChanged()
+        }
+    }
+
+    private fun updateStatus(status: String) {
+        runOnUiThread { statusText.text = "Status: $status" }
+    }
+
+    private fun playNotification() {
+        if (!checkBoxSound.isChecked) return
+
+        try {
+            val toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+            toneGen.startTone(ToneGenerator.TONE_CDMA_PIP, 150)
+        } catch (e: Exception) { e.printStackTrace() }
+
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+
+        if (vibrator.hasVibrator()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(200)
+            }
+        }
     }
 
     private fun checkPermissionsAndEnableBluetooth() {
@@ -163,39 +219,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun startServer() {
-        if (hasPermissions()) {
-            Toast.makeText(this, "Starting server...", Toast.LENGTH_SHORT).show()
-            AcceptThread().start()
-        }
-    }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun startClient() {
-        if (targetDevice == null) {
-            Toast.makeText(this, "Select device from the list!", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (hasPermissions()) {
-            Toast.makeText(this, "Connecting with ${targetDevice?.name}...", Toast.LENGTH_SHORT).show()
-            ConnectThread(targetDevice!!).start()
-        }
-    }
-
-    private fun hasPermissions(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-        } else {
-            true
-        }
-    }
-
     private fun manageMyConnectedSocket(socket: BluetoothSocket) {
-        activeSocket = socket
-        runOnUiThread {
-            Toast.makeText(this, "CONNECTED!", Toast.LENGTH_LONG).show()
-            // todo: run thread
-        }
+        connectedThread = ConnectedThread(socket)
+        connectedThread?.start()
+        updateStatus("CONNECTED")
+    }
+
+    private fun startServer() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
+        updateStatus("Waiting for connection...")
+        AcceptThread().start()
+    }
+
+    private fun startClient() {
+        if (targetDevice == null) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
+        updateStatus("Connecting with ${targetDevice?.name}...")
+        ConnectThread(targetDevice!!).start()
     }
 
     @SuppressLint("MissingPermission")
@@ -203,18 +243,12 @@ class MainActivity : AppCompatActivity() {
         private val serverSocket: BluetoothServerSocket? by lazy {
             bluetoothAdapter?.listenUsingRfcommWithServiceRecord("CommunicatorBT", MY_UUID)
         }
-
         override fun run() {
             var socket: BluetoothSocket? = null
-
             while (true) {
                 try {
                     socket = serverSocket?.accept()
-                } catch (e: IOException) {
-                    Log.e(TAG, "Socket's accept() method failed", e)
-                    break
-                }
-
+                } catch (e: IOException) { break }
                 if (socket != null) {
                     manageMyConnectedSocket(socket)
                     serverSocket?.close()
@@ -222,50 +256,59 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
-        fun cancel() {
-            try {
-                serverSocket?.close()
-            } catch (e: IOException) {
-                Log.e(TAG, "Could not close the connect socket", e)
-            }
-        }
     }
 
     @SuppressLint("MissingPermission")
     private inner class ConnectThread(device: BluetoothDevice) : Thread() {
-        private val socket: BluetoothSocket? by lazy {
-            device.createRfcommSocketToServiceRecord(MY_UUID)
-        }
-
+        private val socket: BluetoothSocket? by lazy { device.createRfcommSocketToServiceRecord(MY_UUID) }
         override fun run() {
             bluetoothAdapter?.cancelDiscovery()
-
             try {
                 socket?.connect()
-
                 socket?.let { manageMyConnectedSocket(it) }
-
             } catch (e: IOException) {
-                Log.e(TAG, "Could not connect", e)
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Connection error", Toast.LENGTH_SHORT).show()
-                }
+                updateStatus("Connection error")
+                try { socket?.close() } catch (e2: IOException) {}
+            }
+        }
+    }
+
+    private inner class ConnectedThread(private val socket: BluetoothSocket) : Thread() {
+        private val inputStream: InputStream = socket.inputStream
+        private val outputStream: OutputStream = socket.outputStream
+        private val buffer: ByteArray = ByteArray(1024)
+
+        override fun run() {
+            var bytes: Int
+
+            while (true) {
                 try {
-                    socket?.close()
+                    bytes = inputStream.read(buffer)
+                    val incomingMessage = String(buffer, 0, bytes)
+
+                    addMessageToChat("They: $incomingMessage")
+
+                    runOnUiThread { playNotification() }
+
                 } catch (e: IOException) {
-                    Log.e(TAG, "Could not close the client socket", e)
+                    Log.d(TAG, "Input stream was disconnected", e)
+                    updateStatus("Disconnected")
+                    break
                 }
-                return
+            }
+        }
+
+        fun write(bytes: ByteArray) {
+            try {
+                outputStream.write(bytes)
+            } catch (e: IOException) {
+                Log.e(TAG, "Error occurred when sending data", e)
+                updateStatus("Sending error")
             }
         }
 
         fun cancel() {
-            try {
-                socket?.close()
-            } catch (e: IOException) {
-                Log.e(TAG, "Could not close the client socket", e)
-            }
+            try { socket.close() } catch (e: IOException) {}
         }
     }
 }
