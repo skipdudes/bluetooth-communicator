@@ -18,4 +18,18 @@
         android:layout_height="wrap_content"
         android:minHeight="48dp" />
 
+    <Button
+        android:id="@+id/button_server"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Run as SERVER (Wait)"
+        android:layout_marginTop="16dp"/>
+
+    <Button
+        android:id="@+id/button_client"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Connect as CLIENT"
+        android:layout_marginTop="8dp"/>
+
 </LinearLayout>
