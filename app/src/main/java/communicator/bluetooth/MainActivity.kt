@@ -198,6 +198,8 @@ class MainActivity : AppCompatActivity() {
                 if (pairedDevices.isNullOrEmpty()) return
 
                 val deviceDesc = parent.getItemAtPosition(position).toString()
+                if (!deviceDesc.contains("[") || !deviceDesc.contains("]")) return
+
                 try {
                     val mac = deviceDesc.substring(deviceDesc.indexOf('[') + 1, deviceDesc.indexOf(']'))
 
@@ -262,7 +264,13 @@ class MainActivity : AppCompatActivity() {
     private inner class ConnectThread(device: BluetoothDevice) : Thread() {
         private val socket: BluetoothSocket? by lazy { device.createRfcommSocketToServiceRecord(MY_UUID) }
         override fun run() {
-            bluetoothAdapter?.cancelDiscovery()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                ActivityCompat.checkSelfPermission(this@MainActivity, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                updateStatus("Missing permissions")
+                return
+            }
+
+            //bluetoothAdapter?.cancelDiscovery()
             try {
                 socket?.connect()
                 socket?.let { manageMyConnectedSocket(it) }
